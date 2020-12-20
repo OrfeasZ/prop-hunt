@@ -1,10 +1,11 @@
 local playerPropNames = {}
 local playerProps = {}
 local playerPropPositions = {}
+local collisionLookupTable = {}
+local playerIdToSoldierInstance = {}
 
-NetEvents:Subscribe(NetMessage.C2S_SET_PROP, function(player, bpName)
-    -- Check if this bp exists.
-    print('Setting prop for player')
+function setPlayerProp(player, bpName)
+	print('Setting prop for player')
     print(bpName)
 	print(player)
 
@@ -17,6 +18,7 @@ NetEvents:Subscribe(NetMessage.C2S_SET_PROP, function(player, bpName)
 		return
 	end
 
+    -- Check if this bp exists.
     local bp = ResourceManager:LookupDataContainer(ResourceCompartment.ResourceCompartment_Game, bpName)
 
     if bp == nil then
@@ -31,10 +33,18 @@ NetEvents:Subscribe(NetMessage.C2S_SET_PROP, function(player, bpName)
 		return
 	end
 
+	-- TODO: Server-side prop creation is currently disabled because it results
+	-- in collision between the player and the prop and some props end up making
+	-- the player start flying.
+
 	-- If we have an old prop, delete it.
-	if playerProps[player.id] ~= nil then
-        playerProps[player.id].entities[1]:Destroy()
-        playerProps[player.id] = nil
+	--[[if playerProps[player.id] ~= nil then
+		for _, entity in pairs(playerProps[player.id].entities) do
+			PhysicsEntity(entity):Destroy()
+		end
+
+		playerProps[player.id] = nil
+		collisionLookupTable[player.soldier.physicsEntityBase.instanceId] = nil
     end
 
     local realBp = Blueprint(bp)
@@ -46,18 +56,34 @@ NetEvents:Subscribe(NetMessage.C2S_SET_PROP, function(player, bpName)
     if bus == nil or #bus.entities == 0 then
         print('Failed to create prop entity for client.')
         return
-    end
+	end
+
+	collisionLookupTable[player.soldier.physicsEntityBase.instanceId] = {}
+	playerIdToSoldierInstance[player.id] = player.soldier.physicsEntityBase.instanceId
 
 	-- Cast and initialize the entity.
 	for _, entity in pairs(bus.entities) do
 		entity:Init(Realm.Realm_Server, true)
+
+		-- Make sure these props can't be damaged.
+		if entity:Is('ServerPhysicsEntity') then
+			print('Got physics entity')
+			PhysicsEntity(entity):RegisterDamageCallback(function() return false end)
+
+			table.insert(collisionLookupTable[player.soldier.physicsEntityBase.instanceId], PhysicsEntity(entity).physicsEntityBase.instanceId)
+		end
 	end
 
-	playerPropNames[player.id] = bpName
 	playerPropPositions[player.id] = player.soldier.transform
-    playerProps[player.id] = bus
+	playerProps[player.id] = bus]]
+
+	playerPropNames[player.id] = bpName
 
 	NetEvents:Broadcast(NetMessage.S2C_PROP_CHANGED, player.id, bpName)
+end
+
+NetEvents:Subscribe(NetMessage.C2S_SET_PROP, function(player, bpName)
+	setPlayerProp(player, bpName)
 end)
 
 Events:Subscribe('Engine:Update', function()
@@ -95,31 +121,54 @@ end)
 local function destroyPropForPlayer(player)
 	local bus = playerProps[player.id]
 
-	if bus == nil then
-		return
+	if bus ~= nil then
+		for _, entity in pairs(bus.entities) do
+			entity:Destroy()
+		end
+
+		playerProps[player.id] = nil
 	end
 
-	bus.entities[1]:Destroy()
+	if player.soldier ~= nil then
+		player.soldier.forceInvisible = false
+	end
 
-	playerProps[player.id] = nil
+	if playerIdToSoldierInstance[player.id] ~= nil then
+		collisionLookupTable[playerIdToSoldierInstance[player.id]] = nil
+		playerIdToSoldierInstance[player.id] = nil
+	end
+
 	playerPropNames[player.id] = nil
 	playerPropPositions[player.id] = nil
 
 	NetEvents:Broadcast(NetMessage.S2C_REMOVE_PROP, player.id)
+
 end
+
+Events:Subscribe('Player:Killed', function(player)
+	destroyPropForPlayer(player)
+end)
 
 Events:Subscribe('Player:Destroyed', function(player)
 	destroyPropForPlayer(player)
 end)
 
--- TODO: Optimize this with a precomputed lookup table.
 Hooks:Install('Entity:ShouldCollideWith', 100, function(hook, entityA, entityB)
-	for id, bus in pairs(playerProps) do
-		for _, entity in pairs(bus.entities) do
-			if entity:Is('ServerPhysicsEntity') and PhysicsEntity(entity).physicsEntityBase.instanceId == entityB.instanceId then
-				local player = PlayerManager:GetPlayerById(id)
+	local entities = collisionLookupTable[entityA.instanceId]
 
-				if player.soldier and player.soldier.physicsEntityBase.instanceId == entityA.instanceId then
+	if entities ~= nil then
+		for _, entityId in pairs(entities) do
+			if entityId == entityB.instanceId then
+				hook:Return(false)
+				return
+			end
+		end
+	else
+		entities = collisionLookupTable[entityB.instanceId]
+
+		if entities ~= nil then
+			for _, entityId in pairs(entities) do
+				if entityId == entityA.instanceId then
 					hook:Return(false)
 					return
 				end
@@ -131,7 +180,8 @@ end)
 function makePlayerProp(player)
 	player.soldier.forceInvisible = true
 
-	-- TODO: Set default prop for player.
+	-- Set default prop for player.
+	setPlayerProp(player, 'XP2/Objects/SkybarBarStool_01/SkybarBarStool_01')
 
 	player:EnableInput(EntryInputActionEnum.EIAFire, false)
 	player:EnableInput(EntryInputActionEnum.EIAZoom, false)
@@ -155,5 +205,29 @@ function makePlayerSeeker(player)
 	player:EnableInput(EntryInputActionEnum.EIAThrowGrenade, false)
 	player:EnableInput(EntryInputActionEnum.EIAToggleParachute, false)
 
+	NetEvents:Broadcast(NetMessage.S2C_REMOVE_PROP, player.id)
 	NetEvents:SendTo(NetMessage.S2C_MAKE_SEEKER, player)
 end
+
+local function cleanupRound()
+	for _, prop in pairs(playerProps) do
+		for _, entity in pairs(prop.entities) do
+			entity:Destroy()
+		end
+	end
+
+	playerPropNames = {}
+	playerProps = {}
+	playerPropPositions = {}
+	collisionLookupTable = {}
+	playerIdToSoldierInstance = {}
+
+	for _, player in pairs(PlayerManager:GetPlayers()) do
+		if player.soldier ~= nil then
+			player.soldier.forceInvisible = false
+		end
+	end
+end
+
+Events:Subscribe('Level:Destroy', cleanupRound)
+Events:Subscribe('Extension:Unloading', cleanupRound)

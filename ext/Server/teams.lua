@@ -4,7 +4,7 @@ NetEvents:Subscribe(NetMessage.C2S_CLIENT_READY, function(player)
 	table.insert(readyPlayers, player)
 
 	-- If the game has already started then just set the player as a spectator.
-	if roundActive then
+	if roundState == RoundState.Hiding or roundState == RoundState.Seeking or roundState == RoundState.PostRound then
 		setPlayerSpectating(player, true)
 		return
 	end
@@ -14,7 +14,7 @@ NetEvents:Subscribe(NetMessage.C2S_CLIENT_READY, function(player)
     player.teamId = TeamId.Team1
 
     -- Spawn the player.
-    spawnPlayer(player)
+    spawnSeeker(player)
 end)
 
 -- Remove player from list of ready players when they disconnect.
@@ -28,7 +28,7 @@ Events:Subscribe('Player:Destroyed', function(player)
 end)
 
 -- Clear all ready players when a new level is loading.
-Events:Subscribe('Level:LoadResources', function()
+Events:Subscribe('Level:Destroy', function()
 	readyPlayers = {}
 end)
 
@@ -36,8 +36,8 @@ function assignTeams()
 	-- Randomly assign teams to players.
 	local players = PlayerManager:GetPlayers()
 
-	-- We want half the players to be seekers and half to be props.
-	local halfPlayers = #players / 2
+	-- We want a third of the players to be seekers and the rest props
+	local halfPlayers = #players / 3
 
 	if halfPlayers == 0 then
 		halfPlayers = 1
@@ -49,6 +49,9 @@ function assignTeams()
 	for _, player in pairs(players) do
 		player.teamId = TeamId.TeamNeutral
 	end
+
+	local seekerChance = 1.0 / #players
+	math.randomseed(SharedUtils:GetTimeMS())
 
 	-- Then we start going through everyone, randomly selecting seekers
 	-- until we have filled our quota.
@@ -62,7 +65,7 @@ function assignTeams()
 				goto assign_continue
 			end
 
-			if MathUtils:GetRandomInt(0, 1) == 1 then
+			if math.random() <= seekerChance then
 				player.teamId = TeamId.Team1
 				seekerPlayers = seekerPlayers + 1
 			end
@@ -78,3 +81,42 @@ function assignTeams()
 		end
 	end
 end
+
+function isSeeker(player)
+	return player.teamId == TeamId.Team1
+end
+
+function isProp(player)
+	return player.teamId == TeamId.Team2
+end
+
+function isSpectator(player)
+	return player.teamId == TeamId.TeamNeutral
+end
+
+function getSeekerCount()
+	local seekerCount = 0
+
+	for _, player in pairs(PlayerManager:GetPlayersByTeam(TeamId.Team1)) do
+		-- Ignore bots and dead players.
+		if player.onlineId ~= 0 and player.soldier ~= nil then
+			seekerCount = seekerCount + 1
+		end
+	end
+
+	return seekerCount
+end
+
+function getPropCount()
+	local propCount = 0
+
+	for _, player in pairs(PlayerManager:GetPlayersByTeam(TeamId.Team2)) do
+		-- Ignore bots and dead players.
+		if player.onlineId ~= 0 and player.soldier ~= nil  then
+			propCount = propCount + 1
+		end
+	end
+
+	return propCount
+end
+

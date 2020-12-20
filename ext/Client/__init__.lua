@@ -5,7 +5,6 @@ require('__shared/round-state')
 isProp = false
 
 require('debug')
-require('fade-manager')
 require('player-prop')
 require('player-seeker')
 require('player-input')

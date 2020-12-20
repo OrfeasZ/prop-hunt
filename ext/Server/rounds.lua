@@ -1,6 +1,7 @@
 roundTimer = 0.0
 roundState = RoundState.Idle
 local roundUpdateTimer = 5.0
+local roundStateTimer = 10.0
 
 -- Send round info to a player as soon as they join.
 NetEvents:Subscribe(NetMessage.C2S_CLIENT_READY, function(player)
@@ -15,6 +16,16 @@ local function broadcastRoundInfo()
 		roundTime = roundTimer,
 		roundState = roundState,
 	})
+end
+
+local function broadcastRoundState()
+	if roundState == RoundState.PreRound then
+		ChatManager:Yell('Round starts in ' .. tostring(math.floor(roundTimer + 0.5)) .. ' seconds.', 4)
+	elseif roundState == RoundState.Hiding then
+		ChatManager:Yell(tostring(math.floor(roundTimer + 0.5)) .. ' seconds left to hide.', 4)
+	elseif roundState == RoundState.Seeking then
+		ChatManager:Yell('Round ends in ' .. tostring(math.floor(roundTimer + 0.5)) .. ' seconds.', 4)
+	end
 end
 
 local function enterStateHiding()
@@ -47,7 +58,7 @@ end
 
 local function enterStateSeeking()
 	roundTimer = Config.TimeLimit
-	roundState = RoundState.Hiding
+	roundState = RoundState.Seeking
 
 	broadcastRoundInfo()
 
@@ -70,6 +81,15 @@ local function enterStatePostRound()
 	roundState = RoundState.PostRound
 
 	broadcastRoundInfo()
+
+	-- TODO: Actual messages.
+	if getSeekerCount() == 0 then
+		ChatManager:Yell('Props win!', 20)
+	elseif getPropCount() == 0 then
+		ChatManager:Yell('Seekers win!', 20)
+	else
+		ChatManager:Yell('Props win!', 20)
+	end
 end
 
 local function exitStatePostRound()
@@ -85,6 +105,7 @@ end
 local function updateRoundActive(dt)
 	roundTimer = roundTimer - dt
 	roundUpdateTimer = roundUpdateTimer - dt
+	roundStateTimer = roundStateTimer - dt
 
 	-- Round phase has ended. We need to move to the next one.
 	if roundTimer <= 0.0 then
@@ -104,11 +125,26 @@ local function updateRoundActive(dt)
 		broadcastRoundInfo()
 		roundUpdateTimer = 5.0
 	end
+
+	if roundStateTimer <= 0.0 then
+		broadcastRoundState()
+
+		if roundState == RoundState.Seeking then
+			roundStateTimer = 30.0
+		else
+			roundStateTimer = 10.0
+		end
+	end
+
+	-- If all seekers are dead or all props are dead, the game is over
+	if roundState == RoundState.Seeking and (getSeekerCount() == 0 or getPropCount() == 0) then
+		enterStatePostRound()
+	end
 end
 
 local function updateRoundInactive(dt)
 	-- Check if we have enough players to start the game.
-	if #readyPlayers <= Config.MinPlayers then
+	if #readyPlayers < Config.MinPlayers then
 		return
 	end
 

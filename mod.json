@@ -1,7 +1,15 @@
 {
 	"Name": "Prop Hunt",
-	"Authors": ["NoFaTe"],
-	"Description": "Hunt some props!",
-	"Version": "0.1",
-	"HasVeniceEXT": true
+	"Authors": [ "NoFaTe" ],
+	"URL": "https://github.com/OrfeasZ/prop-hunt",
+	"Description": "The classic hide-and-seek prop hunt mod re-created for VU.",
+	"Version": "0.0.1-alpha",
+	"HasVeniceEXT": true,
+	"RequiredXPacks": [ 2 ],
+	"Dependencies": {
+		"veniceext": "^1.0.8"
+	},
+	"Tags": [
+		"prop-hunt"
+	]
 }

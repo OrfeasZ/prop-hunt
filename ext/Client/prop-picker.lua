@@ -175,8 +175,6 @@ local function pickProp()
 		local intersectStart = from + (direction * intersection[1])
 		local intersectEnd = from + (direction * intersection[2])
 
-		print(intersection[1])
-
 		table.insert(raycastObjects, { aabb, aabbTrans, mesh.name, intersectStart, intersectEnd, false })
 
 		::continue::

@@ -14,36 +14,14 @@ Events:Subscribe('Player:Chat', function(player, recipientMask, message)
 		return
 	end
 
-	print('Chat: ' .. message)
-
-    if message == 'fadein' then
-        print('Sending fade in event.')
-		NetEvents:SendTo(NetMessage.S2C_FADE, player, true)
-	end
-
-	if message == 'fadeout' then
-        print('Sending fade out event.')
-		NetEvents:SendTo(NetMessage.S2C_FADE, player, false)
-    end
-
-    if message == 'prop' then
-        if player.soldier ~= nil then
-        	player.soldier.forceInvisible = true
-        end
-
-		print('Sending prop event')
-		player.teamId = TeamId.Team2
-        NetEvents:SendTo(NetMessage.S2C_MAKE_PROP, player)
+	--[[if message == 'prop' then
+		spawnHider(player)
+        makePlayerProp(player)
     end
 
     if message == 'seeker' then
-        if player.soldier ~= nil then
-        	player.soldier.forceInvisible = false
-        end
-
-        print('Sending seeker event')
-		player.teamId = TeamId.Team1
-        NetEvents:SendTo(NetMessage.S2C_MAKE_SEEKER, player)
+		spawnSeeker(player)
+        makePlayerSeeker(player)
     end
 
     if message == 'pos' then
@@ -52,6 +30,7 @@ Events:Subscribe('Player:Chat', function(player, recipientMask, message)
         end
 
         print(player.soldier.transform)
-    end
+    end]]
 end)
 
+ServerUtils:SetCustomGameModeName('Prop Hunt')
